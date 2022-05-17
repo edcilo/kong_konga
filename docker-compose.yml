@@ -1,0 +1,133 @@
+version: '3.9'
+
+services:
+  kongdb:
+    image: postgres
+    container_name: kongdb
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_USER=kong
+      - POSTGRES_DB=kong
+      - POSTGRES_PASSWORD=kong
+    volumes:
+      - ./db:/var/lib/postgresql/data
+    networks:
+      - kongNet
+
+  kong_migrations:
+    image: kong
+    environment:
+      - KONG_DATABASE=postgres
+      - KONG_PG_HOST=kongdb
+      - KONG_PG_PASSWORD=kong
+      - KONG_CASSANDRA_CONTACT_POINTS=kongdb
+    command: kong migrations bootstrap
+    restart: on-failure
+    depends_on:
+      - kongdb
+    networks:
+      - kongNet
+
+  kong:
+    image: kong
+    container_name: kong
+    restart: on-failure
+    ports:
+      - 8000:8000
+      - 8443:8443
+      - 8001:8001
+      - 8444:8444
+    environment:
+      - LC_CTYPE=en_US.UTF-8
+      - LC_ALL=en_US.UTF-8
+      - KONG_DATABASE=postgres
+      - KONG_PG_HOST=kongdb
+      - KONG_PG_USER=kong
+      - KONG_PG_PASSWORD=kong
+      - KONG_CASSANDRA_CONTACT_POINTS=kongdb
+      - KONG_PROXY_ACCESS_LOG=/dev/stdout
+      - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+      - KONG_PROXY_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_LISTEN=0.0.0.0:8001, 0.0.0.0:8444 ssl
+    depends_on:
+      - kong_migrations
+    networks:
+      - kongNet
+
+  kongadb:
+    image: mariadb
+    container_name: kongadb
+    ports: 
+      - 3306:3306
+    environment:
+      - MYSQL_ROOT_PASSWORD=kong
+      - MYSQL_DATABASE=konga
+      - MYSQL_USER=kong
+      - MYSQL_PASSWORD=kong
+    volumes:
+      - ./dbmysql:/var/lib/mysql
+    networks:
+      - kongNet
+
+  konga_migrations:
+    image: pantsel/konga
+    environment:
+      - NODE_ENV=production
+    command: node ./bin/konga.js prepare --adapter mysql --uri mysql://kong:kong@kongadb:3306/konga
+    restart: on-failure
+    depends_on:
+      - kongdb
+    networks:
+      - kongNet
+
+  konga:
+    image: pantsel/konga
+    container_name: konga
+    ports:
+      - 1337:1337
+    environment:
+      - NODE_ENV=production
+      - DB_ADAPTER=mysql
+      - DB_HOST=kongadb
+      - DB_PORT=3306
+      - DB_USER=kong
+      - DB_PASSWORD=kong
+      - DB_DATABASE=konga
+    depends_on:
+      - konga_migrations
+    networks:
+      - kongNet
+
+
+  nginx0:
+    image: nginx:alpine
+    container_name: nginx0
+    volumes:
+      - ./nginx0/index.html:/usr/share/nginx/html/index.html
+    networks:
+      - kongNet
+  
+  nginx1:
+    image: nginx:alpine
+    container_name: nginx1
+    volumes:
+      - ./nginx1/index.html:/usr/share/nginx/html/index.html
+    networks:
+      - kongNet
+
+  nginx2:
+    image: nginx:alpine
+    container_name: nginx2
+    volumes:
+      - ./nginx2/index.html:/usr/share/nginx/html/index.html
+    networks:
+      - kongNet
+
+
+networks:
+  kongNet:
+    driver: bridge
+
+# docker run --rm --link psql:psql --net kong_kongNet -e "KONG_DATABASE=postgres" -e "KONG_PG_HOST=psql" -e "KONG_PG_USER=kong" -e "KONG_PG_PASSWORD=kong" -e "KONG_CASSANDRA_CONTACT_POINTS=psql" kong kong migrations bootstrap
