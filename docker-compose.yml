@@ -78,7 +78,7 @@ services:
     command: node ./bin/konga.js prepare --adapter mysql --uri mysql://kong:kong@kongadb:3306/konga
     restart: on-failure
     depends_on:
-      - kongdb
+      - kongadb
     networks:
       - kongNet
 
